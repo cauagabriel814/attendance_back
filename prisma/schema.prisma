@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// EMPRESAS
+// ─────────────────────────────────────────────
+model Company {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                     String    @unique @db.VarChar(255)
+  ownerName                 String    @db.VarChar(255)
+  cnpjHash                  String    @unique @db.VarChar(64)   // SHA-256 do CNPJ (LGPD)
+  ownerBirthDate            DateTime  @db.Date
+  allowOvertime             Boolean   @default(false)
+  maxOvertimeHours          Decimal?  @db.Decimal(5, 2)         // null = não permitido
+  maxEmployees              Int
+  passwordHash              String    @db.VarChar(255)           // bcrypt cost 12
+  emailVerified             Boolean   @default(false)
+  emailVerificationToken    String?   @db.Uuid
+  emailVerificationExpires  DateTime? @db.Timestamptz
+  isActive                  Boolean   @default(true)
+  createdAt                 DateTime  @default(now()) @db.Timestamptz
+  deletedAt                 DateTime? @db.Timestamptz             // soft delete (LGPD)
+
+  roles             Role[]
+  employees         Employee[]
+  attendanceRecords AttendanceRecord[]
+  refreshTokens     RefreshToken[]     @relation("CompanyRefreshTokens")
+
+  @@map("companies")
+}
+
+// ─────────────────────────────────────────────
+// CARGOS (por empresa)
+// ─────────────────────────────────────────────
+model Role {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String    @db.Uuid
+  name        String    @db.VarChar(100)
+  permissions Json      @default("[]")   // ex: ["view_dashboard","manage_employees"]
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  deletedAt   DateTime? @db.Timestamptz
+
+  company   Company    @relation(fields: [companyId], references: [id])
+  employees Employee[]
+
+  @@unique([companyId, name])
+  @@map("roles")
+}
+
+// ─────────────────────────────────────────────
+// FUNCIONÁRIOS
+// ─────────────────────────────────────────────
+model Employee {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId                String    @db.Uuid
+  roleId                   String    @db.Uuid
+  name                     String    @db.VarChar(255)
+  email                    String    @unique @db.VarChar(255)
+  cpfEncrypted             String    @db.Text                  // AES-256-CBC (LGPD)
+  birthDate                DateTime  @db.Date
+  entryTime                String    @db.VarChar(5)            // "HH:MM"
+  exitTime                 String    @db.VarChar(5)            // "HH:MM"
+  lateToleranceAllowed     Boolean   @default(false)
+  overtimeAllowed          Boolean   @default(false)
+  passwordHash             String    @db.VarChar(255)
+  emailVerified            Boolean   @default(false)
+  emailVerificationToken   String?   @db.Uuid
+  emailVerificationExpires DateTime? @db.Timestamptz
+  isActive                 Boolean   @default(true)
+  createdAt                DateTime  @default(now()) @db.Timestamptz
+  deletedAt                DateTime? @db.Timestamptz            // soft delete (LGPD)
+
+  company           Company            @relation(fields: [companyId], references: [id])
+  role              Role               @relation(fields: [roleId], references: [id])
+  attendanceRecords AttendanceRecord[]
+  refreshTokens     RefreshToken[]     @relation("EmployeeRefreshTokens")
+
+  @@map("employees")
+}
+
+// ─────────────────────────────────────────────
+// REGISTROS DE PONTO
+// ─────────────────────────────────────────────
+model AttendanceRecord {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String           @db.Uuid
+  companyId       String           @db.Uuid
+  date            DateTime         @db.Date
+  checkIn         DateTime?        @db.Timestamptz
+  checkOut        DateTime?        @db.Timestamptz
+  status          AttendanceStatus @default(ABSENT)
+  minutesLate     Int              @default(0)
+  overtimeMinutes Int              @default(0)
+  createdAt       DateTime         @default(now()) @db.Timestamptz
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  company  Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([employeeId, date])
+  @@map("attendance_records")
+}
+
+enum AttendanceStatus {
+  ON_TIME
+  LATE
+  ABSENT
+  OVERTIME
+  PRESENT
+}
+
+// ─────────────────────────────────────────────
+// REFRESH TOKENS (rotação segura)
+// ─────────────────────────────────────────────
+model RefreshToken {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String          @db.Uuid                           // ID do employee ou company
+  userType  RefreshUserType
+  tokenHash String          @db.VarChar(255)                   // SHA-256 do token raw
+  expiresAt DateTime        @db.Timestamptz
+  revoked   Boolean         @default(false)
+  createdAt DateTime        @default(now()) @db.Timestamptz
+
+  company  Company?  @relation("CompanyRefreshTokens", fields: [userId], references: [id], map: "company_refresh_token_fk")
+  employee Employee? @relation("EmployeeRefreshTokens", fields: [userId], references: [id], map: "employee_refresh_token_fk")
+
+  @@map("refresh_tokens")
+}
+
+enum RefreshUserType {
+  EMPLOYEE
+  COMPANY
+}
+
+// ─────────────────────────────────────────────
+// LOG DE NOTIFICAÇÕES (auditoria)
+// ─────────────────────────────────────────────
+model EmailNotificationLog {
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipientId      String                @db.Uuid
+  recipientType    NotificationRecipient
+  notificationType NotificationType
+  status           NotificationStatus
+  errorMessage     String?               @db.Text
+  sentAt           DateTime              @default(now()) @db.Timestamptz
+
+  @@map("email_notification_logs")
+}
+
+enum NotificationRecipient {
+  EMPLOYEE
+  COMPANY
+}
+
+enum NotificationType {
+  EMAIL_VERIFICATION
+  CHECK_IN_REMINDER
+  CHECK_OUT_REMINDER
+  COMPANY_REGISTERED
+  EMPLOYEE_REGISTERED
+  OVERTIME_ALERT
+  LATE_ALERT
+}
+
+enum NotificationStatus {
+  SENT
+  FAILED
+}
