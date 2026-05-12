@@ -1,7 +1,11 @@
-version: '3.9'
-
+# ============================================================
+# docker-compose.yml — Attendance Backend
+# Serviços: postgres, redis, migration, api
+# Padrão: migration roda e sai; api depende dela
+# ============================================================
 services:
-  # ─── PostgreSQL ────────────────────────────────────────────────────
+
+  # ─── PostgreSQL ─────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: attendance_postgres
@@ -11,7 +15,7 @@ services:
       POSTGRES_PASSWORD: attendance_pass
       POSTGRES_DB: attendance_db
     ports:
-      - '5432:5432'
+      - '5433:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +24,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Redis (refresh token store / cron locks) ─────────────────────
+  # ─── Redis ──────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: attendance_redis
@@ -33,11 +37,20 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── NestJS API ───────────────────────────────────────────────────
+  # ─── Migration — roda prisma migrate deploy e sai ───────────────────────────
+  migration:
+    build: .
+    command: sh -c "npx prisma migrate deploy"
+    environment:
+      DATABASE_URL: postgresql://attendance_user:attendance_pass@postgres:5432/attendance_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  # ─── NestJS API ─────────────────────────────────────────────────────────────
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: attendance_api
     restart: unless-stopped
     env_file: .env
@@ -46,13 +59,14 @@ services:
     ports:
       - '3000:3000'
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - .:/app
-      - /app/node_modules
+      - migration
+      - redis
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/']
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
 
 volumes:
   postgres_data:
