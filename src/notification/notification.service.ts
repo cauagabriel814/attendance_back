@@ -46,15 +46,19 @@ export class NotificationService {
       });
     } catch (error) {
       this.logger.error(`Falha ao enviar e-mail para ${options.to}: ${error}`);
-      await this.prisma.emailNotificationLog.create({
-        data: {
-          recipientId: options.recipientId,
-          recipientType: options.recipientType as any,
-          notificationType: options.notificationType as any,
-          status: 'FAILED',
-          errorMessage: String(error),
-        },
-      });
+      try {
+        await this.prisma.emailNotificationLog.create({
+          data: {
+            recipientId: options.recipientId,
+            recipientType: options.recipientType as any,
+            notificationType: options.notificationType as any,
+            status: 'FAILED',
+            errorMessage: String(error),
+          },
+        });
+      } catch (logError) {
+        this.logger.error(`Falha ao registrar log de notificação: ${logError}`);
+      }
     }
   }
 
@@ -64,7 +68,7 @@ export class NotificationService {
     name: string,
     token: string,
     type: 'employee' | 'company',
-    recipientId: string = 'pending', // substituir pelo ID real quando disponível
+    recipientId: string,
   ) {
     const verifyUrl = `${process.env.FRONTEND_URL}/${type === 'company' ? 'empresa' : 'funcionario'}/verificar-email?token=${token}`;
 

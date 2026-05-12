@@ -30,7 +30,6 @@ model Company {
   roles             Role[]
   employees         Employee[]
   attendanceRecords AttendanceRecord[]
-  refreshTokens     RefreshToken[]     @relation("CompanyRefreshTokens")
 
   @@map("companies")
 }
@@ -79,7 +78,6 @@ model Employee {
   company           Company            @relation(fields: [companyId], references: [id])
   role              Role               @relation(fields: [roleId], references: [id])
   attendanceRecords AttendanceRecord[]
-  refreshTokens     RefreshToken[]     @relation("EmployeeRefreshTokens")
 
   @@map("employees")
 }
@@ -126,9 +124,6 @@ model RefreshToken {
   revoked   Boolean         @default(false)
   createdAt DateTime        @default(now()) @db.Timestamptz
 
-  company  Company?  @relation("CompanyRefreshTokens", fields: [userId], references: [id], map: "company_refresh_token_fk")
-  employee Employee? @relation("EmployeeRefreshTokens", fields: [userId], references: [id], map: "employee_refresh_token_fk")
-
   @@map("refresh_tokens")
 }
 
@@ -142,7 +137,7 @@ enum RefreshUserType {
 // ─────────────────────────────────────────────
 model EmailNotificationLog {
   id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  recipientId      String                @db.Uuid
+  recipientId      String                @db.VarChar(255)
   recipientType    NotificationRecipient
   notificationType NotificationType
   status           NotificationStatus

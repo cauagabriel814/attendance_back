@@ -14,6 +14,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { NotificationModule } from './notification/notification.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { TestUtilsModule } from './test-utils/test-utils.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -54,6 +55,9 @@ import appConfig from './config/app.config';
     EmployeeModule,
     AttendanceModule,
     DashboardModule,
+
+    // ─── Utilitários de teste (apenas em desenvolvimento) ─────────
+    ...(process.env.NODE_ENV !== 'production' ? [TestUtilsModule] : []),
   ],
   providers: [
     // Rate limiting global

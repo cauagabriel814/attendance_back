@@ -78,6 +78,7 @@ export class CompanyService {
       company.ownerName,
       emailVerificationToken,
       'company',
+      company.id,
     );
 
     return {
