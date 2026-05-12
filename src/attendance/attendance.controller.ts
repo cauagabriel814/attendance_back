@@ -55,4 +55,10 @@ export class AttendanceController {
       limit ? Number(limit) : 30,
     );
   }
+
+  @Get('monthly-summary')
+  @ApiOperation({ summary: 'Resumo mensal de horas do funcionário autenticado' })
+  monthlySummary(@CurrentUser('sub') employeeId: string) {
+    return this.attendanceService.monthlySummary(employeeId);
+  }
 }

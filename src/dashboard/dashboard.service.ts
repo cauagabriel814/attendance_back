@@ -22,10 +22,20 @@ export class DashboardService {
       periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
     }
 
-    // ─── Total de funcionários ativos ────────────────────────────────────────
-    const totalActiveEmployees = await this.prisma.employee.count({
-      where: { companyId, isActive: true, deletedAt: null },
-    });
+    // ─── Total de funcionários ativos + limite de hora extra da empresa ───────
+    const [totalActiveEmployees, company] = await Promise.all([
+      this.prisma.employee.count({
+        where: { companyId, isActive: true, deletedAt: null },
+      }),
+      this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { maxOvertimeHours: true },
+      }),
+    ]);
+
+    const maxOvertimeHours = company?.maxOvertimeHours
+      ? Number(company.maxOvertimeHours)
+      : null;
 
     // ─── Métricas do dia atual ───────────────────────────────────────────────
     const todayRecords = await this.prisma.attendanceRecord.findMany({
@@ -139,6 +149,18 @@ export class DashboardService {
     // ─── Presença diária no período (para gráfico de barras) ─────────────────
     const dailyTrend = this.buildDailyTrend(periodRecords, periodStart, todayStart);
 
+    // ─── Relatório de conformidade de jornada ────────────────────────────────
+    const complianceReport = {
+      maxOvertimeHours,
+      employees: overtimeByEmployee.map((emp) => ({
+        employeeId:    emp.employeeId,
+        name:          emp.name,
+        overtimeHours: emp.overtimeHours,
+        exceeded:
+          maxOvertimeHours !== null ? emp.overtimeHours > maxOvertimeHours : false,
+      })),
+    };
+
     return {
       period,
       periodStart: periodStart.toISOString().split('T')[0],
@@ -158,6 +180,7 @@ export class DashboardService {
         mostLate: lateRanking,
       },
       overtimeByEmployee,
+      complianceReport,
       dailyTrend,
     };
   }

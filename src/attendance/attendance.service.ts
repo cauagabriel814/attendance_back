@@ -230,6 +230,45 @@ export class AttendanceService {
     };
   }
 
+  // ─── Resumo mensal ────────────────────────────────────────────────────────────
+
+  async monthlySummary(employeeId: string) {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: employeeId, deletedAt: null },
+      select: { entryTime: true, exitTime: true },
+    });
+    if (!employee) throw new NotFoundException('Funcionário não encontrado');
+
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: {
+        employeeId,
+        date: { gte: monthStart, lte: monthEnd },
+        checkIn:  { not: null },
+        checkOut: { not: null },
+      },
+      select: { checkIn: true, checkOut: true },
+    });
+
+    const workedDays = records.length;
+    const workedMinutes = records.reduce((acc, r) => {
+      return acc + Math.floor((r.checkOut!.getTime() - r.checkIn!.getTime()) / 60_000);
+    }, 0);
+
+    const [entryH, entryM] = employee.entryTime.split(':').map(Number);
+    const [exitH,  exitM]  = employee.exitTime.split(':').map(Number);
+    const scheduledMinutesPerDay = (exitH * 60 + exitM) - (entryH * 60 + entryM);
+
+    return {
+      workedHours:    +(workedMinutes / 60).toFixed(2),
+      scheduledHours: +(scheduledMinutesPerDay * workedDays / 60).toFixed(2),
+      workedDays,
+    };
+  }
+
   // ─── Hoje (status do dia atual do funcionário) ────────────────────────────────
 
   async todayStatus(employeeId: string) {
